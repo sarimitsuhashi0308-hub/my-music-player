@@ -1,0 +1,183 @@
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>My Music Player</title>
+<style>
+body {
+  margin: 0;
+  background: #151525;
+  color: white;
+  font-family: sans-serif;
+  text-align: center;
+}
+main {
+  max-width: 480px;
+  margin: auto;
+  padding: 30px 20px;
+}
+h1 { color: #f8a8ce; }
+button, .add {
+  background: #f8a8ce;
+  color: #222;
+  border: none;
+  border-radius: 16px;
+  padding: 12px 18px;
+  margin: 5px;
+  font-size: 16px;
+  cursor: pointer;
+}
+.add { display: inline-block; }
+input[type=file] { display: none; }
+audio { width: 100%; margin: 20px 0; }
+#songs { text-align: left; margin-top: 25px; }
+.song {
+  background: #303047;
+  padding: 14px;
+  margin: 8px 0;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.song.active { border: 2px solid #f8a8ce; }
+.song span { flex: 1; overflow-wrap: anywhere; }
+.song button { padding: 8px 12px; }
+#now { color: #f8a8ce; overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+<main>
+<h1>🎵 My Music Player</h1>
+<p id="now">曲を選んでね</p>
+<label class="add">
+＋ 曲を追加
+<input type="file" id="files" accept="audio/*" multiple>
+</label>
+<audio id="audio" controls playsinline></audio>
+<div>
+<button onclick="previous()">⏮</button>
+<button onclick="togglePlay()">⏯</button>
+<button onclick="next()">⏭</button>
+</div>
+<button id="repeat" onclick="toggleRepeat()">🔁 全曲リピート ON</button>
+<div id="songs"></div>
+</main>
+<script>
+let db, tracks = [], current = -1;
+let repeatAll = true;
+let audioURL = null;
+const audio = document.getElementById("audio");
+const songs = document.getElementById("songs");
+
+const request = indexedDB.open("MyMusicLibrary",1);
+request.onupgradeneeded = e => {
+  e.target.result.createObjectStore("tracks",{
+    keyPath:"id",autoIncrement:true
+  });
+};
+request.onsuccess = e => {
+  db = e.target.result;
+  load();
+};
+request.onerror = () => alert("保存領域を開けませんでした");
+
+function store(mode="readonly") {
+  return db.transaction("tracks",mode)
+           .objectStore("tracks");
+}
+function load() {
+  const req = store().getAll();
+  req.onsuccess = () => {
+    tracks = req.result;
+    render();
+  };
+}
+document.getElementById("files").onchange = async e => {
+  const files = Array.from(e.target.files);
+  const tx = db.transaction("tracks","readwrite");
+  const s = tx.objectStore("tracks");
+  for(const f of files) {
+    s.add({name:f.name,blob:f});
+  }
+  tx.oncomplete = load;
+  tx.onerror = () => alert("保存に失敗しました");
+  e.target.value = "";
+};
+function render() {
+  songs.innerHTML = "";
+  tracks.forEach((t,i) => {
+    const div = document.createElement("div");
+    div.className = "song" + (i===current?" active":"");
+    const name = document.createElement("span");
+    name.textContent = t.name;
+    name.onclick = () => play(i);
+    const del = document.createElement("button");
+    del.textContent = "削除";
+    del.onclick = () => remove(i);
+    div.append(name,del);
+    songs.append(div);
+  });
+}
+async function play(i) {
+  if(i<0 || i>=tracks.length) return;
+  current = i;
+  audio.pause();
+  if(audioURL) URL.revokeObjectURL(audioURL);
+  audioURL = URL.createObjectURL(tracks[i].blob);
+  audio.src = audioURL;
+  document.getElementById("now").textContent =
+    "再生中： " + tracks[i].name;
+  render();
+  try { await audio.play(); }
+  catch(e) { console.log(e); }
+}
+function togglePlay() {
+  if(current<0) {
+    play(0);
+  } else if(audio.paused) {
+    audio.play().catch(console.log);
+  } else {
+    audio.pause();
+  }
+}
+function next() {
+  if(!tracks.length) return;
+  if(current+1<tracks.length) {
+    play(current+1);
+  } else if(repeatAll) {
+    play(0);
+  }
+}
+function previous() {
+  if(!tracks.length) return;
+  play(current>0?current-1:0);
+}
+function toggleRepeat() {
+  repeatAll = !repeatAll;
+  document.getElementById("repeat").textContent =
+    "🔁 全曲リピート " + (repeatAll?"ON":"OFF");
+}
+audio.onended = next;
+function remove(i) {
+  const id = tracks[i].id;
+  const wasCurrent = i===current;
+  const req = store("readwrite").delete(id);
+  req.onsuccess = () => {
+    if(wasCurrent) {
+      audio.pause();
+      audio.removeAttribute("src");
+      current = -1;
+      document.getElementById("now").textContent =
+        "曲を選んでね";
+    } else if(i<current) {
+      current--;
+    }
+    load();
+  };
+}
+</script>
+</body>
+</html>
