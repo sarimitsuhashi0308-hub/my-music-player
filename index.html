@@ -45,6 +45,7 @@ audio { width: 100%; margin: 20px 0; }
 .song.active { border: 2px solid #f8a8ce; }
 .song span { flex: 1; overflow-wrap: anywhere; cursor: pointer; }
 .song button { padding: 8px 12px; flex-shrink: 0; }
+.song .rename { background: #d1e2ec; }
 #now { color: #7895a7; overflow-wrap: anywhere; }
 .cloud-box {
   margin: 24px 0;
@@ -207,13 +208,39 @@ function render() {
     name.textContent = (t.url ? "☁️ " : "") + t.name;
     name.title = "タップして再生";
     name.onclick = () => play(i);
+    const rename = document.createElement("button");
+    rename.type = "button";
+    rename.className = "rename";
+    rename.textContent = "名前変更";
+    rename.onclick = () => renameTrack(i);
     const del = document.createElement("button");
     del.type = "button";
     del.textContent = "削除";
     del.onclick = () => remove(i);
-    div.append(name, del);
+    div.append(name, rename, del);
     songs.append(div);
   });
+}
+
+function renameTrack(i) {
+  const track = tracks[i];
+  if (!track) return;
+  const newName = prompt("表示する曲名を入力してね（日本語OK）", track.name);
+  if (newName === null) return;
+  const trimmed = newName.trim();
+  if (!trimmed) { alert("曲名を入力してね"); return; }
+  const updated = { ...track, name: trimmed };
+  const req = store("readwrite").put(updated);
+  req.onsuccess = () => {
+    if (current === i) {
+      now.textContent = "再生中： " + trimmed;
+      if ("mediaSession" in navigator && "MediaMetadata" in window) {
+        navigator.mediaSession.metadata = new MediaMetadata({ title: trimmed, artist: "chikori Musicplayer" });
+      }
+    }
+    load();
+  };
+  req.onerror = () => alert("曲名の保存に失敗しました");
 }
 
 async function play(i) {
