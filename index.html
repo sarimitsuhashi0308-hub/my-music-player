@@ -155,6 +155,12 @@ function load() {
     tracks = req.result;
     current = selectedId == null ? -1 : tracks.findIndex(t => t.id === selectedId);
     render();
+    
+if (!window.chikoriCloudSyncStarted) {
+  window.chikoriCloudSyncStarted = true;
+  syncSupabaseSongs();
+}
+
   };
 }
 
@@ -337,18 +343,41 @@ function remove(i) {
 }
   const SUPABASE_URL = "https://dadbsomdichyznmlevxh.supabase.co";
   const SUPABASE_KEY = "sb_publishable_ORbWjxr5SHIvYvQbXG8FtQ_n23qsScH";
-  async function loadSupabaseSongs() {
+  
+async function loadSupabaseSongs() {
   const response = await fetch(
-    SUPABASE_URL + "/rest/v1/songs?select=name,url",
+    SUPABASE_URL + "/storage/v1/object/list/chicory-music",
     {
+      method: "POST",
       headers: {
-        apikey: SUPABASE_KEY
-      }
+        apikey: SUPABASE_KEY,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        prefix: "",
+        limit: 100,
+        offset: 0
+      })
     }
   );
-  if (!response.ok) throw new Error("曲の取得に失敗しました");
-  return await response.json();
+
+  if (!response.ok) {
+    throw new Error("曲一覧の取得に失敗しました");
+  }
+
+  const files = await response.json();
+
+  return files
+    .filter(f => f.id && /\.(mp3|m4a|aac|wav)$/i.test(f.name))
+    .map(f => ({
+      name: f.name,
+      url: SUPABASE_URL +
+        "/storage/v1/object/public/chicory-music/" +
+        encodeURIComponent(f.name)
+    }));
 }
+
+  async function loadSupabaseSongs() {
   async function syncSupabaseSongs() {
   try {
     const songs = await loadSupabaseSongs();
