@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>chikori Musicplayer</title>
+<style>
+body {
+  margin: 0;
+  background: #ffffff;
+  color: #536b7a;
+  font-family: sans-serif;
+  text-align: center;
+}
+main {
+  max-width: 480px;
+  margin: auto;
+  padding: 30px 20px 48px;
+}
+h1 { color: #7895a7; }
+h2 { color: #7895a7; font-size: 19px; }
+button, .add {
+  background: #a9c2d1;
+  color: #222;
+  border: none;
+  border-radius: 16px;
+  padding: 12px 18px;
+  margin: 5px;
+  font-size: 16px;
+  cursor: pointer;
+}
+.add { display: inline-block; }
+input[type=file] { display: none; }
+audio { width: 100%; margin: 20px 0; }
+#songs { text-align: left; margin-top: 25px; }
+.song {
+  background: #e3edf2;
+  padding: 14px;
+  margin: 8px 0;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.song.active { border: 2px solid #f8a8ce; }
+.song span { flex: 1; overflow-wrap: anywhere; cursor: pointer; }
+.song button { padding: 8px 12px; flex-shrink: 0; }
+.song .rename { background: #d1e2ec; }
+#now { color: #7895a7; overflow-wrap: anywhere; }
+.cloud-box {
+  margin: 24px 0;
+  padding: 16px;
+  border-radius: 18px;
+  background: #f1f6f9;
+}
+.cloud-box input {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  margin: 10px 0;
+  padding: 13px;
+  border: 1px solid #aec7d7;
+  border-radius: 12px;
+  font: inherit;
+  color: #536b7a;
+  background: white;
+}
+.cloud-box p { font-size: 13px; line-height: 1.5; }
+</style>
+</head>
+<body>
+<main>
+  <img src="IMG_2954.jpeg" alt="CHIKORI" style="display:block;width:90%;max-width:380px;height:auto;margin:0 auto 24px;border-radius:20px;">
+  <h1>🎵 chikori Musicplayer</h1>
+  <p id="now">曲を選んでね</p>
+  <label class="add">
+    ＋ 曲を追加
+    <input type="file" id="files" accept="audio/*,.mp3,.m4a,.aac,.wav" multiple>
+  </label>
+  <audio id="audio" controls playsinline></audio>
+  <div>
+    <button type="button" onclick="previous()">⏮</button>
+    <button type="button" onclick="togglePlay()">⏯</button>
+    <button type="button" onclick="next()">⏭</button>
+  </div>
+  <button type="button" id="repeat" onclick="toggleRepeat()">🔁 全曲リピート ON</button>
+  <div id="songs"></div>
+  <section class="cloud-box">
+    <h2>☁️ クラウドの曲を追加</h2>
+    <input type="text" id="cloudName" placeholder="曲名（空欄でもOK）" aria-label="クラウドの曲名">
+    <input type="url" id="cloudUrl" placeholder="https:// から始まる音楽のURL" aria-label="クラウドの音楽URL" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false">
+    <button type="button" onclick="addCloudTrack()">＋ クラウド曲を登録</button>
+    <p>登録したクラウド曲は上の曲一覧に入り、順番に連続再生されます。クラウド曲を一覧から削除しても、保存先の音声ファイルは削除されません。</p>
+  </section>
+</main>
+<script>
+let db, tracks = [], current = -1;
+let repeatAll = true;
+let audioURL = null;
+const audio = document.getElementById("audio");
+const songs = document.getElementById("songs");
+const now = document.getElementById("now");
+const DEFAULT_CLOUD_URL = "https://dadbsomdichyznmlevxh.supabase.co/storage/v1/object/public/chicory-music/%20blue%20birdCocco.mp3";
+const SEED_KEY = "chikori_cloud_added_v1";
+
+// 以前から保存してあるiPhone内の曲は同じデータベースのまま引き継ぐ。
+const request = indexedDB.open("MyMusicLibrary", 1);
+request.onupgradeneeded = e => {
+  const database = e.target.result;
+  if (!database.objectStoreNames.contains("tracks")) {
+    database.createObjectStore("tracks", { keyPath: "id", autoIncrement: true });
+  }
+};
+request.onsuccess = e => {
+  db = e.target.result;
+  addFirstCloudSongOnce();
+};
+request.onerror = () => alert("保存領域を開けませんでした");
+
+function store(mode = "readonly") {
+  return db.transaction("tracks", mode).objectStore("tracks");
+}
+
+// テストで再生できたクラウド曲を最初の1回だけ一覧に追加。
+function addFirstCloudSongOnce() {
+  if (localStorage.getItem(SEED_KEY) === "yes") {
+    load();
+    return;
+  }
+  const tx = db.transaction("tracks", "readwrite");
+  const s = tx.objectStore("tracks");
+  const req = s.getAll();
+  req.onsuccess = () => {
+    if (!req.result.some(t => t.url === DEFAULT_CLOUD_URL)) {
+      s.add({ name: "blue bird / Cocco", url: DEFAULT_CLOUD_URL });
+    }
+  };
+  tx.oncomplete = () => {
+    localStorage.setItem(SEED_KEY, "yes");
+    load();
+  };
+  tx.onerror = () => {
+    load();
+    alert("クラウド曲の初期登録に失敗しました");
+  };
+}
+
+function load() {
+  const selectedId = current >= 0 ? tracks[current]?.id : null;
+  const req = store().getAll();
+  req.onsuccess = () => {
+    tracks = req.result;
+    current = selectedId == null ? -1 : tracks.findIndex(t => t.id === selectedId);
+    render();
+  };
+}
+
+document.getElementById("files").onchange = e => {
+  const files = Array.from(e.target.files);
+  if (!files.length) return;
+  const tx = db.transaction("tracks", "readwrite");
+  const s = tx.objectStore("tracks");
+  for (const f of files) {
+    s.add({ name: f.name, blob: f });
+  }
+  tx.oncomplete = load;
+  tx.onerror = () => alert("曲の保存に失敗しました");
+  e.target.value = "";
+};
+
+function nameFromUrl(url) {
+  const lastPart = new URL(url).pathname.split("/").pop() || "クラウドの曲";
+  try { return decodeURIComponent(lastPart).trim() || "クラウドの曲"; }
+  catch (e) { return lastPart; }
+}
+
+function addCloudTrack() {
+  const nameInput = document.getElementById("cloudName");
+  const urlInput = document.getElementById("cloudUrl");
+  const urlText = urlInput.value.trim();
+  let parsed;
+  try { parsed = new URL(urlText); }
+  catch (e) { alert("正しい音楽URLを入れてね"); return; }
+  if (parsed.protocol !== "https:") {
+    alert("https:// から始まる音楽URLを使ってね");
+    return;
+  }
+  if (tracks.some(t => t.url === parsed.href)) {
+    alert("このクラウド曲はすでに一覧に登録されています");
+    return;
+  }
+  const name = nameInput.value.trim() || nameFromUrl(parsed.href);
+  const req = store("readwrite").add({ name, url: parsed.href });
+  req.onsuccess = () => {
+    nameInput.value = "";
+    urlInput.value = "";
+    load();
+  };
+  req.onerror = () => alert("クラウド曲の登録に失敗しました");
+}
+
+function render() {
+  songs.innerHTML = "";
+  tracks.forEach((t, i) => {
+    const div = document.createElement("div");
+    div.className = "song" + (i === current ? " active" : "");
+    const name = document.createElement("span");
+    name.textContent = (t.url ? "☁️ " : "") + t.name;
+    name.title = "タップして再生";
+    name.onclick = () => play(i);
+    const rename = document.createElement("button");
+    rename.type = "button";
+    rename.className = "rename";
+    rename.textContent = "名前変更";
+    rename.onclick = () => renameTrack(i);
+    const del = document.createElement("button");
+    del.type = "button";
+    del.textContent = "削除";
+    del.onclick = () => remove(i);
+    div.append(name, rename, del);
+    songs.append(div);
+  });
+}
+
+function renameTrack(i) {
+  const track = tracks[i];
+  if (!track) return;
+  const newName = prompt("表示する曲名を入力してね（日本語OK）", track.name);
+  if (newName === null) return;
+  const trimmed = newName.trim();
+  if (!trimmed) { alert("曲名を入力してね"); return; }
+  const updated = { ...track, name: trimmed };
+  const req = store("readwrite").put(updated);
+  req.onsuccess = () => {
+    if (current === i) {
+      now.textContent = "再生中： " + trimmed;
+      if ("mediaSession" in navigator && "MediaMetadata" in window) {
+        navigator.mediaSession.metadata = new MediaMetadata({ title: trimmed, artist: "chikori Musicplayer" });
+      }
+    }
+    load();
+  };
+  req.onerror = () => alert("曲名の保存に失敗しました");
+}
+
+async function play(i) {
+  if (i < 0 || i >= tracks.length) return;
+  const track = tracks[i];
+  if (!track.url && !track.blob) {
+    alert("この曲のファイルが見つかりません");
+    return;
+  }
+  audio.pause();
+  if (audioURL) {
+    URL.revokeObjectURL(audioURL);
+    audioURL = null;
+  }
+  current = i;
+  if (track.url) {
+    audio.src = track.url;
+  } else {
+    audioURL = URL.createObjectURL(track.blob);
+    audio.src = audioURL;
+  }
+  now.textContent = "再生中： " + track.name;
+  if ("mediaSession" in navigator && "MediaMetadata" in window) {
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: track.name,
+      artist: "chikori Musicplayer"
+    });
+  }
+  render();
+  try { await audio.play(); }
+  catch (e) { console.log("再生できませんでした", e); }
+}
+
+function togglePlay() {
+  if (current < 0) {
+    play(0);
+  } else if (audio.paused) {
+    audio.play().catch(console.log);
+  } else {
+    audio.pause();
+  }
+}
+
+function next() {
+  if (!tracks.length) return;
+  if (current + 1 < tracks.length) {
+    play(current + 1);
+  } else if (repeatAll) {
+    play(0);
+  }
+}
+
+function previous() {
+  if (!tracks.length) return;
+  play(current > 0 ? current - 1 : 0);
+}
+
+function toggleRepeat() {
+  repeatAll = !repeatAll;
+  document.getElementById("repeat").textContent =
+    "🔁 全曲リピート " + (repeatAll ? "ON" : "OFF");
+}
+audio.onended = next;
+audio.onerror = () => {
+  if (current >= 0 && tracks[current]) {
+    now.textContent = "再生できませんでした： " + tracks[current].name + "（URLや通信状態を確認してね）";
+  }
+};
+
+function remove(i) {
+  if (!tracks[i]) return;
+  const track = tracks[i];
+  if (!confirm("「" + track.name + "」を曲一覧から削除しますか？")) return;
+  const wasCurrent = i === current;
+  const req = store("readwrite").delete(track.id);
+  req.onsuccess = () => {
+    if (wasCurrent) {
+      audio.pause();
+      audio.removeAttribute("src");
+      audio.load();
+      if (audioURL) {
+        URL.revokeObjectURL(audioURL);
+        audioURL = null;
+      }
+      current = -1;
+      now.textContent = "曲を選んでね";
+    }
+    load();
+  };
+  req.onerror = () => alert("削除に失敗しました");
+}
+</script>
+</body>
+</html>
