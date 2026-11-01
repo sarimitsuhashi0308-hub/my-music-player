@@ -332,6 +332,42 @@ function remove(i) {
   };
   req.onerror = () => alert("削除に失敗しました");
 }
+  const SUPABASE_URL = "https://dadbsomdichyznmlevxh.supabase.co";
+  const SUPABASE_KEY = "sb_publishable_ORbWjxr5SHIvYvQbXG8FtQ_n23qsScH";
+  async function loadSupabaseSongs() {
+  const response = await fetch(
+    SUPABASE_URL + "/rest/v1/songs?select=name,url",
+    {
+      headers: {
+        apikey: SUPABASE_KEY
+      }
+    }
+  );
+  if (!response.ok) throw new Error("曲の取得に失敗しました");
+  return await response.json();
+}
+  async function syncSupabaseSongs() {
+  try {
+    const songs = await loadSupabaseSongs();
+    const existingUrls = new Set(tracks.map(t => t.url).filter(Boolean));
+    const newSongs = songs.filter(s =>
+      s.name && s.url && !existingUrls.has(s.url)
+    );
+
+    if (newSongs.length === 0) return;
+
+    const tx = db.transaction("tracks", "readwrite");
+    const objectStore = tx.objectStore("tracks");
+
+    newSongs.forEach(song => {
+      objectStore.add({ name: song.name, url: song.url });
+    });
+
+    tx.oncomplete = () => load();
+  } catch (error) {
+    console.error("Supabase同期エラー:", error);
+  }
+}
 </script>
 </body>
 </html>
