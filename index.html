@@ -367,10 +367,33 @@ async function loadSupabaseSongs() {
 
   const files = await response.json();
 
+let sharedTitles = {};
+
+try {
+  const titleResponse = await fetch(
+    SUPABASE_URL + "/rest/v1/song_titles?select=file_name,display_name",
+    {
+      headers: { apikey: SUPABASE_KEY }
+    }
+  );
+
+  if (titleResponse.ok) {
+    const rows = await titleResponse.json();
+    rows.forEach(row => {
+      if (row.file_name && row.display_name) {
+        sharedTitles[row.file_name] = row.display_name;
+      }
+    });
+  }
+} catch (error) {
+  console.warn("共有曲名の取得に失敗", error);
+}
+
   return files
     .filter(f => f.id && /\.(mp3|m4a|aac|wav)$/i.test(f.name))
     .map(f => ({
-      name: f.name,
+      name: sharedTitles[f.name] || f.name,
+      hasSharedTitle: Boolean(sharedTitles[f.name]),
       url: SUPABASE_URL +
         "/storage/v1/object/public/chicory-music/" +
         encodeURIComponent(f.name)
@@ -386,7 +409,19 @@ async function loadSupabaseSongs() {
       s.name && s.url && !existingUrls.has(s.url)
     );
 
-    if (newSongs.length === 0) return;
+    
+const renamedSongs = tracks
+  .map(t => {
+    const match = songs.find(s => s.url === t.url);
+    if (!match?.hasSharedTitle || match.name === t.name) {
+      return null;
+    }
+    return { ...t, name: match.name };
+  })
+  .filter(Boolean);
+
+if (newSongs.length === 0 && renamedSongs.length === 0) return;
+
 
     const tx = db.transaction("tracks", "readwrite");
     const objectStore = tx.objectStore("tracks");
@@ -394,6 +429,10 @@ async function loadSupabaseSongs() {
     newSongs.forEach(song => {
       objectStore.add({ name: song.name, url: song.url });
     });
+
+renamedSongs.forEach(song => {
+  objectStore.put(song);
+});
 
     tx.oncomplete = () => load();
   } catch (error) {
