@@ -39,7 +39,7 @@ audio { width: 100%; margin: 20px 0; }
   margin: 8px 0;
   border-radius: 12px;
   display: flex;
-  align-items: center;
+  align-items: center;く
   gap: 8px;
 }
 .song.active { border: 2px solid #f8a8ce; }
@@ -83,7 +83,7 @@ audio { width: 100%; margin: 20px 0; }
 <body>
 <main>
   <img src="IMG_2954.jpeg" alt="CHIKORI" style="display:block;width:90%;max-width:380px;height:auto;margin:0 auto 24px;border-radius:20px;">
-  <h1>🎵 chikori Musicplayer</h1>
+  <h1>🐭 chikori Musicplayer</h1>
   <p id="now">曲を選んでね</p>
   <label class="add">
     ＋ 曲を追加
@@ -101,7 +101,7 @@ audio { width: 100%; margin: 20px 0; }
 
   <div id="songs"></div>
   <section class="cloud-box">
-    <h2>☁️ クラウドの曲を追加</h2>
+    <h2>🐭クラウドの曲を追加</h2>
     <input type="text" id="cloudName" placeholder="曲名（空欄でもOK）" aria-label="クラウドの曲名">
     <input type="url" id="cloudUrl" placeholder="https:// から始まる音楽のURL" aria-label="クラウドの音楽URL" inputmode="url" autocapitalize="off" autocorrect="off" spellcheck="false">
     <button type="button" onclick="addCloudTrack()">＋ クラウド曲を登録</button>
@@ -227,7 +227,7 @@ function render() {
     const div = document.createElement("div");
     div.className = "song" + (i === current ? " active" : "");
     const name = document.createElement("span");
-    name.textContent = (t.url ? "☁️ " : "") + t.name;
+    name.textContent = (t.url ? "🐭" : "") + t.name;
     name.title = "タップして再生";
     name.onclick = () => play(i);
     const rename = document.createElement("button");
