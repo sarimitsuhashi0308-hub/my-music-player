@@ -165,7 +165,7 @@ function load() {
   const selectedId = current >= 0 ? tracks[current]?.id : null;
   const req = store().getAll();
   req.onsuccess = () => {
-    tracks = req.result;
+    tracks = req.result.filter(t => t.url);
     current = selectedId == null ? -1 : tracks.findIndex(t => t.id === selectedId);
     render();
     
